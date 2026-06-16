@@ -15,6 +15,15 @@ SENT_ALERTS_FILE = "sent_alerts.csv"
 
 DEFAULT_EMAIL = "peyton@internetsherlock.com"
 
+config = {
+    "developer_token": st.secrets["developer_token"],
+    "client_id": st.secrets["client_id"],
+    "client_secret": st.secrets["client_secret"],
+    "refresh_token": st.secrets["refresh_token"],
+    "login_customer_id": st.secrets["login_customer_id"],
+    "use_proto_plus": st.secrets["use_proto_plus"],
+}
+
 ACCOUNTS = [
     {"name": "Action Target - Range Site", "id": "5060680905"},
     {"name": "Action Target - Shop Site", "id": "5836612939"},
@@ -133,11 +142,7 @@ def color_status(val):
 
 
 def parse_emails(email_string):
-    return [
-        email.strip()
-        for email in str(email_string).split(",")
-        if email.strip()
-    ]
+    return [email.strip() for email in str(email_string).split(",") if email.strip()]
 
 
 def send_email(subject, body, recipients):
@@ -175,7 +180,6 @@ def send_budget_alerts(alert_df, spend_type):
         return 0
 
     settings = load_settings()
-
     recipients = parse_emails(settings.get("notification_emails", ""))
 
     if not recipients:
@@ -183,7 +187,6 @@ def send_budget_alerts(alert_df, spend_type):
 
     today_str = str(date.today())
     sent_df = load_sent_alerts()
-
     new_alerts = []
 
     for _, row in alert_df.iterrows():
@@ -238,7 +241,7 @@ def send_budget_alerts(alert_df, spend_type):
 
 @st.cache_data(ttl=300)
 def load_spend_data():
-    client = GoogleAdsClient.load_from_storage("google-ads.yaml", version=API_VERSION)
+    client = GoogleAdsClient.load_from_dict(config, version=API_VERSION)
     ga_service = client.get_service("GoogleAdsService")
 
     rows = []
@@ -299,8 +302,7 @@ def build_table(df, spend_type, budget_col, spend_col, threshold, settings):
     table = df[df["Account Status"] == "ENABLED"].copy()
 
     table["% Spent"] = table.apply(
-        lambda r: r[spend_col] / r[budget_col] * 100
-        if r[budget_col] > 0 else 0,
+        lambda r: r[spend_col] / r[budget_col] * 100 if r[budget_col] > 0 else 0,
         axis=1
     )
 
