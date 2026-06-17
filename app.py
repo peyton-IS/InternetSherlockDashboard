@@ -5,7 +5,6 @@ import calendar
 from datetime import date, datetime
 
 API_VERSION = "v24"
-DEFAULT_BUDGET_FILE = "budgets.csv"
 
 config = {
     "developer_token": st.secrets["developer_token"],
@@ -26,8 +25,8 @@ ACCOUNTS = [
     {"name": "Everlight Solar", "id": "2180505076"},
     {"name": "Jewett Roofing", "id": "6433427355"},
     {"name": "North Kit Roofing - Primary", "id": "6533233386"},
-    {"name": "Pinnacle Roofing - Lexington", "id": "2802577211"},
-    {"name": "Pinnacle Roofing - Louisville", "id": "2905271937"},
+    {"name": "Pinnacle Roofing - Lexington, KY", "id": "2802577211"},
+    {"name": "Pinnacle Roofing - Louisville, KY", "id": "2905271937"},
     {"name": "Pope Tech", "id": "4094989713"},
     {"name": "Ready Set Grow - Main", "id": "8143425694"},
     {"name": "Snowy Peak Films", "id": "5295445807"},
@@ -42,24 +41,47 @@ st.title("Google Ads MTD Spend Dashboard")
 
 def default_budget_df():
     return pd.DataFrame([
-        {"Account": a["name"], "Ads Budget": 0, "LSA Budget": 0}
+        {
+            "Account": a["name"],
+            "Account ID": a["id"],
+            "Ads Budget": 0,
+            "LSA Budget": 0,
+        }
         for a in ACCOUNTS
     ])
 
 
+def clean_account_id(value):
+    return str(value).replace("-", "").strip()
+
+
+def clean_money(value):
+    if pd.isna(value):
+        return 0
+
+    value = str(value).replace("$", "").replace(",", "").strip()
+
+    if value.lower() in ["", "nan", "none", "paused", "#value!"]:
+        return 0
+
+    try:
+        return float(value)
+    except ValueError:
+        return 0
+
+
 def clean_budget_df(df):
-    required = ["Account", "Ads Budget", "LSA Budget"]
+    required = ["Account", "Account ID", "Ads Budget", "LSA Budget"]
 
     for col in required:
         if col not in df.columns:
-            if col == "Account":
-                df[col] = ""
-            else:
-                df[col] = 0
+            df[col] = "" if col in ["Account", "Account ID"] else 0
 
     df = df[required].copy()
-    df["Ads Budget"] = pd.to_numeric(df["Ads Budget"], errors="coerce").fillna(0)
-    df["LSA Budget"] = pd.to_numeric(df["LSA Budget"], errors="coerce").fillna(0)
+
+    df["Account ID"] = df["Account ID"].apply(clean_account_id)
+    df["Ads Budget"] = df["Ads Budget"].apply(clean_money)
+    df["LSA Budget"] = df["LSA Budget"].apply(clean_money)
 
     return df
 
@@ -183,6 +205,7 @@ def build_table(df, budget_col, spend_col):
 
     return table[[
         "Account",
+        "Account ID",
         budget_col,
         spend_col,
         "% Spent",
@@ -198,19 +221,12 @@ with budget_tab:
 
     budget_source = st.radio(
         "Choose how to load budgets",
-        ["Upload CSV", "Google Sheet CSV URL", "Default blank budgets"]
+        ["Google Sheet CSV URL", "Upload CSV", "Default blank budgets"]
     )
 
     budget_df = default_budget_df()
 
-    if budget_source == "Upload CSV":
-        uploaded_file = st.file_uploader("Upload budgets CSV", type=["csv"])
-
-        if uploaded_file:
-            budget_df = clean_budget_df(pd.read_csv(uploaded_file))
-            st.success("Budget CSV loaded.")
-
-    elif budget_source == "Google Sheet CSV URL":
+    if budget_source == "Google Sheet CSV URL":
         sheet_url = st.text_input(
             "Google Sheet CSV URL",
             help="Use a published/export CSV URL."
@@ -222,6 +238,13 @@ with budget_tab:
                 st.success("Google Sheet budgets loaded.")
             except Exception as e:
                 st.error(f"Could not load Google Sheet: {e}")
+
+    elif budget_source == "Upload CSV":
+        uploaded_file = st.file_uploader("Upload budgets CSV", type=["csv"])
+
+        if uploaded_file:
+            budget_df = clean_budget_df(pd.read_csv(uploaded_file))
+            st.success("Budget CSV loaded.")
 
     else:
         budget_df = default_budget_df()
@@ -244,7 +267,12 @@ if st.button("Refresh data now"):
 
 spend_df = load_spend_data()
 
-df = spend_df.merge(budget_df, on="Account", how="left")
+df = spend_df.merge(
+    budget_df[["Account ID", "Ads Budget", "LSA Budget"]],
+    on="Account ID",
+    how="left"
+)
+
 df["Ads Budget"] = df["Ads Budget"].fillna(0)
 df["LSA Budget"] = df["LSA Budget"].fillna(0)
 
